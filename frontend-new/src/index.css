@@ -1,0 +1,187 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── shadcn/ui CSS Variables ──────────────────────────────────────── */
+@layer base {
+  :root {
+    --background:   0 0% 100%;
+    --foreground:   222.2 84% 4.9%;
+
+    --card:         0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover:      0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary:      238 84% 59%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary:    210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted:        210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent:       210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive:  0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border:       214.3 31.8% 91.4%;
+    --input:        214.3 31.8% 91.4%;
+    --ring:         238 84% 59%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background:   224 71% 4%;
+    --foreground:   213 31% 91%;
+
+    --card:         224 71% 6%;
+    --card-foreground: 213 31% 91%;
+
+    --popover:      224 71% 5%;
+    --popover-foreground: 213 31% 91%;
+
+    --primary:      238 84% 67%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary:    217 33% 17%;
+    --secondary-foreground: 213 31% 91%;
+
+    --muted:        217 33% 15%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent:       238 84% 67%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive:  0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border:       217 33% 20%;
+    --input:        217 33% 18%;
+    --ring:         238 84% 67%;
+  }
+
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: hsl(var(--background)); }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+}
+
+/* ── Utility classes ─────────────────────────────────────────────── */
+@layer utilities {
+  /* Glass morphism card */
+  .glass {
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+  }
+  .dark .glass {
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  /* Shimmer loading effect */
+  .shimmer {
+    background: linear-gradient(90deg,
+      hsl(var(--muted)) 25%,
+      hsl(var(--secondary)) 50%,
+      hsl(var(--muted)) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Trust score colours */
+  .trust-high   { @apply text-emerald-600 bg-emerald-50 border border-emerald-200/50 dark:text-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/20; }
+  .trust-medium { @apply text-amber-600 bg-amber-50 border border-amber-200/50 dark:text-amber-400 dark:bg-amber-500/10 dark:border-amber-500/20; }
+  .trust-low    { @apply text-red-600 bg-red-50 border border-red-200/50 dark:text-red-400 dark:bg-red-500/10 dark:border-red-500/20; }
+
+  /* Animate in */
+  .animate-in { animation: fadeIn 0.3s ease-out; }
+
+  /* Focus ring */
+  .focus-ring { @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background; }
+
+  /* Sidebar width token */
+  .sidebar-width { width: 260px; }
+}
+
+/* ── Component layer ─────────────────────────────────────────────── */
+@layer components {
+  /* Auth card */
+  .auth-card {
+    @apply glass rounded-2xl p-8 w-full max-w-md shadow-2xl;
+  }
+
+  /* Primary button override (used alongside shadcn/ui) */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5
+           bg-primary text-primary-foreground font-semibold text-sm
+           hover:bg-primary/90 active:scale-95
+           transition-all duration-150 focus-ring;
+  }
+
+  /* Secondary button */
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 rounded-xl px-5 py-2.5
+           bg-transparent text-foreground font-medium text-sm
+           hover:bg-secondary active:scale-95
+           transition-all duration-150 focus-ring;
+  }
+
+  /* Form input override */
+  .input-field {
+    @apply w-full rounded-xl bg-input border border-border px-4 py-2.5 text-sm text-foreground
+           placeholder:text-muted-foreground
+           focus:outline-none focus:ring-2 focus:ring-primary/60
+           transition-shadow duration-150;
+  }
+
+  /* Card */
+  .card-base {
+    @apply glass rounded-2xl border border-border/50 p-6 shadow-xl shadow-black/20;
+  }
+
+  /* Sidebar nav item */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
+           text-muted-foreground hover:text-foreground hover:bg-secondary/60
+           transition-all duration-150 cursor-pointer;
+  }
+  .nav-item.active {
+    @apply text-foreground bg-primary/15 text-primary;
+  }
+}

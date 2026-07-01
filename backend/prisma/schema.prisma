@@ -1,0 +1,300 @@
+// This is your Prisma schema file — the single source of truth for your database.
+// Learn more: https://pris.ly/d/prisma-schema
+// Schema derived from TrustHire AI Schema.md (v1.0.0)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── ENUMS ──────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  CANDIDATE
+  EMPLOYER
+  ADMIN
+}
+
+enum ProfileVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum CompanySize {
+  SIZE_1_10    @map("1-10")
+  SIZE_11_50   @map("11-50")
+  SIZE_51_200  @map("51-200")
+  SIZE_201_500 @map("201-500")
+  SIZE_500_PLUS @map("500+")
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  REMOTE
+  CONTRACT
+}
+
+enum JobStatus {
+  PROCESSING
+  DRAFT
+  ACTIVE
+  CLOSED
+  QUARANTINED
+  REMOVED
+}
+
+enum ApplicationStatus {
+  APPLIED
+  SHORTLISTED
+  INTERVIEW_SCHEDULED
+  REJECTED
+  HIRED
+  WITHDRAWN
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum EmailLogStatus {
+  SENT
+  FAILED
+  BOUNCED
+}
+
+// ── MODELS ─────────────────────────────────────────────────────────────────
+
+/// Central identity table for all platform users (candidates, employers, admins).
+/// Every user has exactly one role. OAuth users may have null password_hash.
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique @db.VarChar(255)
+  passwordHash  String?  @map("password_hash") @db.VarChar(255)
+  role          UserRole
+  emailVerified Boolean  @default(false) @map("email_verified")
+  googleId      String?  @unique @map("google_id") @db.VarChar(255)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  candidateProfile       CandidateProfile?
+  employerProfile        EmployerProfile?
+  notificationPreference NotificationPreference?
+  auditLogs              AuditLog[]              @relation("AdminAuditLogs")
+  reviewedVerifications  CompanyVerification[]   @relation("AdminReviewer")
+  emailLogs              EmailLog[]
+
+  @@index([role])
+  @@map("users")
+}
+
+/// Extended profile for CANDIDATE role users.
+/// Profile completeness (0-100) is computed server-side on every update.
+model CandidateProfile {
+  id                 String            @id @default(uuid()) @db.Uuid
+  userId             String            @unique @map("user_id") @db.Uuid
+  fullName           String            @map("full_name") @db.VarChar(255)
+  location           String?           @db.VarChar(255)
+  jobTitle           String?           @map("job_title") @db.VarChar(255)
+  skills             Json              @default("[]")
+  yearsExperience    Int?              @map("years_experience")
+  preferredJobTypes  Json              @default("[]") @map("preferred_job_types")
+  visibility         ProfileVisibility @default(PUBLIC)
+  resumeUrl          String?           @map("resume_url") @db.VarChar(500)
+  completenessScore  Int               @default(0) @map("completeness_score")
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applications Applications[]
+  embedding  CandidateEmbedding?
+
+  @@index([visibility])
+  @@index([location])
+  @@map("candidate_profiles")
+}
+
+/// Extended profile for EMPLOYER role users.
+/// `verified` is set to true when admin approves company verification.
+model EmployerProfile {
+  id          String      @id @default(uuid()) @db.Uuid
+  userId      String      @unique @map("user_id") @db.Uuid
+  companyName String      @map("company_name") @db.VarChar(255)
+  website     String?     @db.VarChar(500)
+  industry    String?     @db.VarChar(100)
+  companySize CompanySize? @map("company_size")
+  location    String?     @db.VarChar(255)
+  description String?     @db.Text
+  logoUrl     String?     @map("logo_url") @db.VarChar(500)
+  verified    Boolean     @default(false)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobListings  JobListing[]
+  verification CompanyVerification?
+
+  @@index([verified])
+  @@map("employer_profiles")
+}
+
+/// All job postings on the platform.
+/// Trust Score (0–100) is computed by the AI service within 60 seconds of submission.
+/// Listings with Trust Score ≤ 40 are automatically QUARANTINED.
+model JobListing {
+  id          String    @id @default(uuid()) @db.Uuid
+  employerId  String    @map("employer_id") @db.Uuid
+  title       String    @db.VarChar(255)
+  description String    @db.Text
+  requirements String?  @db.Text
+  location    String?   @db.VarChar(255)
+  jobType     JobType   @map("job_type")
+  salaryMin   Int?      @map("salary_min")
+  salaryMax   Int?      @map("salary_max")
+  status      JobStatus @default(PROCESSING)
+  trustScore  Int?      @map("trust_score")
+  trustFlags  Json      @default("[]") @map("trust_flags")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  employer     EmployerProfile @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  applications Applications[]
+  embedding    JobEmbedding?
+
+  @@index([status])
+  @@index([trustScore])
+  @@index([employerId])
+  @@index([createdAt(sort: Desc)])
+  @@index([employerId, createdAt(sort: Desc)])
+  @@map("job_listings")
+}
+
+/// Tracks every candidate application to a job.
+/// Unique constraint on (candidateId, jobId) prevents duplicate applications.
+/// matchScore is denormalized at apply-time for stable sorting.
+model Applications {
+  id          String            @id @default(uuid()) @db.Uuid
+  candidateId String            @map("candidate_id") @db.Uuid
+  jobId       String            @map("job_id") @db.Uuid
+  status      ApplicationStatus @default(APPLIED)
+  matchScore  Float?            @map("match_score")
+  appliedAt   DateTime          @default(now()) @map("applied_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  candidate CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job       JobListing       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, jobId])
+  @@index([candidateId, appliedAt(sort: Desc)])
+  @@index([jobId, matchScore(sort: Desc)])
+  @@index([status])
+  @@map("applications")
+}
+
+/// Company verification requests from employers.
+/// One-to-one with EmployerProfile. Admin actions update this + set employer_profiles.verified.
+model CompanyVerification {
+  id                 String             @id @default(uuid()) @db.Uuid
+  employerId         String             @unique @map("employer_id") @db.Uuid
+  status             VerificationStatus @default(PENDING)
+  registrationNumber String?            @map("registration_number") @db.VarChar(100)
+  documentUrl        String             @map("document_url") @db.VarChar(500)
+  websiteUrl         String?            @map("website_url") @db.VarChar(500)
+  linkedinUrl        String?            @map("linkedin_url") @db.VarChar(500)
+  verificationChecks Json               @default("{}") @map("verification_checks")
+  adminNotes         String?            @map("admin_notes") @db.Text
+  adminId            String?            @map("admin_id") @db.Uuid
+  verifiedAt         DateTime?          @map("verified_at") @db.Timestamptz(6)
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  employer EmployerProfile @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  admin    User?           @relation("AdminReviewer", fields: [adminId], references: [id])
+
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("company_verifications")
+}
+
+/// SBERT embedding vectors for candidate profiles (dimension: 384).
+/// Used for Match Score computation via pgvector cosine similarity.
+/// Note: The `embedding` column uses pgvector's `vector(384)` type.
+/// Managed via raw SQL — Prisma uses `Unsupported` for the vector type.
+model CandidateEmbedding {
+  candidateId String   @id @map("candidate_id") @db.Uuid
+  embedding   Unsupported("vector(384)")?
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  candidate CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@map("candidate_embeddings")
+}
+
+/// SBERT embedding vectors for job listings (dimension: 384).
+model JobEmbedding {
+  jobId     String   @id @map("job_id") @db.Uuid
+  embedding Unsupported("vector(384)")?
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  job JobListing @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("job_embeddings")
+}
+
+/// Immutable audit trail of all admin actions.
+/// Row-level security prevents UPDATE and DELETE on this table.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  adminId    String   @map("admin_id") @db.Uuid
+  action     String   @db.VarChar(100)
+  targetType String?  @map("target_type") @db.VarChar(50)
+  targetId   String?  @map("target_id") @db.Uuid
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  admin User @relation("AdminAuditLogs", fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@map("audit_log")
+}
+
+/// User email notification preferences.
+/// Critical emails (verification, password reset) always sent regardless of preferences.
+model NotificationPreference {
+  id               String  @id @default(uuid()) @db.Uuid
+  userId           String  @unique @map("user_id") @db.Uuid
+  appStatusEmail   Boolean @default(true) @map("app_status_email")
+  marketingEmail   Boolean @default(false) @map("marketing_email")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+/// Email delivery audit log — tracks every outbound email.
+model EmailLog {
+  id                String         @id @default(uuid()) @db.Uuid
+  userId            String?        @map("user_id") @db.Uuid
+  type              String         @db.VarChar(50)
+  status            EmailLogStatus @default(SENT)
+  sendgridMessageId String?        @map("sendgrid_message_id") @db.VarChar(255)
+  sentAt            DateTime       @default(now()) @map("sent_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([sentAt(sort: Desc)])
+  @@map("email_log")
+}

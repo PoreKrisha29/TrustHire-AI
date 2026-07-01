@@ -1,0 +1,82 @@
+version: '3.9'
+
+services:
+  # ── PostgreSQL 15 with pgvector extension ─────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: trusthire_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trusthire
+      POSTGRES_PASSWORD: trusthire_dev_password
+      POSTGRES_DB: trusthire_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U trusthire -d trusthire_db']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MongoDB 7 ──────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7.0
+    container_name: trusthire_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: trusthire
+      MONGO_INITDB_ROOT_PASSWORD: trusthire_dev_password
+      MONGO_INITDB_DATABASE: trusthire_ai
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/trusthire_ai --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis 7 ───────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: trusthire_redis
+    restart: unless-stopped
+    command: redis-server --requirepass trusthire_dev_password --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', 'trusthire_dev_password', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO (S3-compatible local storage) ────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: trusthire_minio
+    restart: unless-stopped
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: trusthire_minio
+      MINIO_ROOT_PASSWORD: trusthire_minio_password
+    ports:
+      - '9000:9000'   # S3 API
+      - '9001:9001'   # MinIO Console UI
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  minio_data:
