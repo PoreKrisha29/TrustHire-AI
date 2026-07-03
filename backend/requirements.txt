@@ -1,0 +1,29 @@
+# ── Django core ──────────────────────────────────────────────────────────────
+Django==5.0.7
+djangorestframework==3.15.2
+djangorestframework-simplejwt==5.3.1
+
+# ── Database ─────────────────────────────────────────────────────────────────
+psycopg2-binary==2.9.9          # Neon PostgreSQL (binary build for easy install)
+
+# ── CORS ─────────────────────────────────────────────────────────────────────
+django-cors-headers==4.4.0
+
+# ── Google Gemini AI ─────────────────────────────────────────────────────────
+google-generativeai==0.7.2
+
+# ── HTTP client (GitHub OAuth) ────────────────────────────────────────────────
+requests==2.32.3
+
+# ── Environment variables ─────────────────────────────────────────────────────
+python-dotenv==1.0.1
+
+# ── PDF generation (for certificates & resume export) ────────────────────────
+reportlab==4.2.2
+
+# ── File uploads ─────────────────────────────────────────────────────────────
+Pillow==10.4.0
+
+# ── Resume parsing ────────────────────────────────────────────────────────────
+PyMuPDF==1.24.5          # fitz — PDF text extraction
+python-docx==1.1.2       # DOCX text extraction
