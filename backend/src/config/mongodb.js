@@ -122,6 +122,7 @@ const ResumeAnalysis = {
       missing_keywords = [],
       integrity_flags = [],
       target_role = null,
+      parsedData = null,
     } = data;
 
     // Enforce 3-analysis limit
@@ -135,7 +136,7 @@ const ResumeAnalysis = {
       fileUrl:      file_url,
       overallScore: overall_score,
       atsScore:     ats_score,
-      data: { strengths, weaknesses, suggestions, missing_keywords, integrity_flags },
+      data: { strengths, weaknesses, suggestions, missing_keywords, integrity_flags, parsedData },
       targetRole:   target_role,
     }).returning();
 

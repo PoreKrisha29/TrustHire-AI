@@ -3,6 +3,7 @@
  *
  * DevPulse AI — Learn & Certify
  * State machine: "catalog" → "quiz" → "results"
+ * Fully client-side: questions from local bank, certs in localStorage.
  * Dark glassmorphism, vanilla CSS-in-JS.
  */
 
@@ -11,19 +12,17 @@ import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import useAuthStore from '@/stores/authStore'
 
-function authFetch(url, opts = {}) {
-  const token = useAuthStore.getState().token
-  return fetch(url, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(opts.headers || {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  })
+// ── localStorage cert helpers ────────────────────────────────────────────────
+const CERTS_KEY = 'dp_certs_v1'
+function loadCerts() {
+  try { return JSON.parse(localStorage.getItem(CERTS_KEY) || '[]') } catch { return [] }
+}
+function saveCert(cert) {
+  const certs = loadCerts().filter(c => c.skill_name !== cert.skill_name)
+  localStorage.setItem(CERTS_KEY, JSON.stringify([cert, ...certs]))
 }
 
-// ── Skill catalog (local copy of backend catalog — static for speed) ──────────
+// ── Skill catalog ────────────────────────────────────────────────────────────
 const SKILL_CATALOG = [
   { skill: 'React',         domain: 'Web Frontend', difficulty: 'medium', time: '8 min',  xp: 200 },
   { skill: 'TypeScript',    domain: 'Web Frontend', difficulty: 'medium', time: '8 min',  xp: 200 },
@@ -44,6 +43,73 @@ const SKILL_CATALOG = [
   { skill: 'Pandas',        domain: 'Data / ML',    difficulty: 'medium', time: '8 min',  xp: 200 },
   { skill: 'Scikit-learn',  domain: 'Data / ML',    difficulty: 'hard',   time: '10 min', xp: 200 },
 ]
+
+// ── Question bank (5 per skill, answer index 0-based) ────────────────────────
+const QUESTION_BANK = {
+  'React': [
+    { question: 'What hook is used to manage local state in a functional component?', options: ['useEffect', 'useState', 'useRef', 'useContext'], answer: 1, explanation: 'useState is the primary hook for local component state.' },
+    { question: 'What does the dependency array in useEffect control?', options: ['Component styling', 'When the effect re-runs', 'Props validation', 'Server requests'], answer: 1, explanation: 'The dependency array determines when the effect executes.' },
+    { question: 'What is the virtual DOM used for in React?', options: ['Direct DOM manipulation', 'Server-side rendering', 'Efficiently updating the real DOM', 'Styling components'], answer: 2, explanation: 'React uses the virtual DOM to batch and minimise real DOM updates.' },
+    { question: 'What is the purpose of React keys in lists?', options: ['Styling list items', 'Tracking list items for efficient re-renders', 'Sorting list items', 'Filtering list items'], answer: 1, explanation: 'Keys help React identify which items changed, added, or removed.' },
+    { question: 'Which method correctly lifts state up?', options: ['Passing state to child via props', 'Moving state to a common parent and passing callbacks', 'Using global variables', 'Using localStorage'], answer: 1, explanation: 'Lifting state means moving it to the closest common ancestor.' },
+  ],
+  'TypeScript': [
+    { question: 'What keyword is used to define a TypeScript interface?', options: ['type', 'interface', 'class', 'struct'], answer: 1, explanation: 'interface defines the shape of an object in TypeScript.' },
+    { question: 'What does the "?" operator mean after a property name?', options: ['Required property', 'Optional property', 'Nullable type', 'Generic type'], answer: 1, explanation: 'The ? marks a property as optional.' },
+    { question: 'What is a union type in TypeScript?', options: ['A type that is both A and B', 'A type that can be A or B', 'An array type', 'A class type'], answer: 1, explanation: 'Union types (A | B) allow a value to be one of several types.' },
+    { question: 'How do you assert a type in TypeScript?', options: ['value as Type', 'type(value)', 'cast<Type>(value)', 'value::Type'], answer: 0, explanation: 'Type assertions use the "as" keyword.' },
+    { question: 'What does the "readonly" modifier do?', options: ['Makes a property invisible', 'Prevents a property from being changed', 'Makes a property optional', 'Converts to string'], answer: 1, explanation: 'readonly prevents reassignment after initial assignment.' },
+  ],
+  'Python': [
+    { question: 'What is the output of: print(type([]))?', options: ['<class list>', "<class 'list'>", 'list', 'Array'], answer: 1, explanation: "type() returns the class object, printed as <class 'list'>" },
+    { question: 'Which keyword is used for list comprehension?', options: ['for', 'map', 'filter', 'lambda'], answer: 0, explanation: 'List comprehensions use for: [x for x in range(10)]' },
+    { question: 'What does the "self" parameter refer to?', options: ['The class itself', 'The instance of the class', 'The parent class', 'A static method'], answer: 1, explanation: 'self refers to the current instance of the class.' },
+    { question: 'Which Python data structure is immutable?', options: ['list', 'dict', 'tuple', 'set'], answer: 2, explanation: 'Tuples are immutable — they cannot be changed after creation.' },
+    { question: 'What does pip stand for?', options: ['Python Installation Package', 'Pip Installs Packages', 'Python Index Package', 'Package Installer for Python'], answer: 3, explanation: 'pip stands for "Package Installer for Python".' },
+  ],
+  'Docker': [
+    { question: 'What does a Dockerfile define?', options: ['Network configuration', 'Instructions to build a Docker image', 'Container runtime settings', 'Volume mounts only'], answer: 1, explanation: 'A Dockerfile contains all commands to assemble an image.' },
+    { question: 'Which command runs a Docker container?', options: ['docker start', 'docker run', 'docker exec', 'docker build'], answer: 1, explanation: 'docker run creates and starts a new container from an image.' },
+    { question: 'What is a Docker volume used for?', options: ['Networking', 'Persisting data outside the container', 'Building images faster', 'Port mapping'], answer: 1, explanation: 'Volumes persist data independently of the container lifecycle.' },
+    { question: 'What does docker-compose do?', options: ['Builds a single container', 'Defines and runs multi-container applications', 'Pushes images to a registry', 'Monitors container performance'], answer: 1, explanation: 'docker-compose orchestrates multiple containers via a YAML file.' },
+    { question: 'What is the base layer in a Docker image called?', options: ['FROM layer', 'Base image', 'Root layer', 'Init layer'], answer: 1, explanation: 'The FROM instruction specifies the base image to build upon.' },
+  ],
+  'PostgreSQL': [
+    { question: 'What SQL clause filters groups after aggregation?', options: ['WHERE', 'GROUP BY', 'HAVING', 'ORDER BY'], answer: 2, explanation: 'HAVING filters after GROUP BY, WHERE filters before aggregation.' },
+    { question: 'What does an INNER JOIN return?', options: ['All rows from left table', 'Matching rows from both tables', 'All rows from both tables', 'All rows from right table'], answer: 1, explanation: 'INNER JOIN returns only rows where the condition matches in both tables.' },
+    { question: 'What is a primary key?', options: ['A foreign key reference', 'A unique identifier for each row', 'An indexed column', 'A nullable column'], answer: 1, explanation: 'Primary keys uniquely identify each row and cannot be NULL.' },
+    { question: 'What does EXPLAIN do in PostgreSQL?', options: ['Lists all tables', 'Shows query execution plan', 'Creates an index', 'Copies data'], answer: 1, explanation: 'EXPLAIN shows how PostgreSQL plans to execute a query.' },
+    { question: 'What data type stores JSON natively in PostgreSQL?', options: ['TEXT', 'VARCHAR', 'JSONB', 'BLOB'], answer: 2, explanation: 'JSONB stores JSON in a binary format for efficient querying.' },
+  ],
+  'Git': [
+    { question: 'What does "git rebase" do?', options: ['Merges branches', 'Reapplies commits on top of another base', 'Deletes commits', 'Creates a branch'], answer: 1, explanation: 'Rebase moves a sequence of commits to a new base commit.' },
+    { question: 'What command undoes the last commit but keeps changes staged?', options: ['git revert HEAD', 'git reset --soft HEAD~1', 'git checkout HEAD~1', 'git stash'], answer: 1, explanation: 'git reset --soft HEAD~1 undoes the commit but keeps changes staged.' },
+    { question: 'What is a git stash?', options: ['A remote branch', 'A temporary shelf for uncommitted changes', 'A merge commit', 'A tag'], answer: 1, explanation: 'git stash saves changes temporarily so you can switch contexts.' },
+    { question: 'What does "origin" refer to in git?', options: ['The first commit', 'The default remote repository name', 'The main branch', 'A local alias'], answer: 1, explanation: 'By convention, origin is the name of the remote you cloned from.' },
+    { question: 'What does git cherry-pick do?', options: ['Selects files to stage', 'Applies a specific commit from another branch', 'Creates a new branch', 'Squashes commits'], answer: 1, explanation: 'cherry-pick applies the changes from a specific commit.' },
+  ],
+  'Node.js': [
+    { question: 'What is the event loop in Node.js?', options: ['A DOM manipulation method', 'The mechanism that handles asynchronous operations', 'A templating engine', 'A database driver'], answer: 1, explanation: 'The event loop allows Node.js to perform non-blocking I/O.' },
+    { question: 'What does "require" do in CommonJS?', options: ['Imports an ES module', 'Synchronously loads a module', 'Fetches a URL', 'Creates a class'], answer: 1, explanation: 'require() synchronously loads and caches a CommonJS module.' },
+    { question: 'Which module is used for file system operations in Node.js?', options: ['path', 'os', 'fs', 'http'], answer: 2, explanation: 'The fs (file system) module provides file I/O operations.' },
+    { question: 'What does process.env contain?', options: ['Node version', 'Environment variables', 'Command-line arguments', 'File system paths'], answer: 1, explanation: 'process.env provides access to environment variables.' },
+    { question: 'What is middleware in Express.js?', options: ['A database layer', 'Functions that execute between request and response', 'A templating engine', 'A routing file'], answer: 1, explanation: 'Middleware functions have access to req, res, and next().' },
+  ],
+}
+
+// ── Generate questions for any skill ─────────────────────────────────────────
+function generateQuestions(skillName) {
+  const bank = QUESTION_BANK[skillName]
+  if (bank) return bank
+  // Generic fallback questions
+  return [
+    { question: `Which best describes a core use case of ${skillName}?`, options: [`Building web UIs`, `Data processing and automation`, `Cloud infrastructure`, `${skillName} is primarily for networking`], answer: 1, explanation: `${skillName} has many applications in modern software development.` },
+    { question: `${skillName} is primarily associated with which domain?`, options: [`Frontend UI`, `Backend services`, `DevOps and infrastructure`, `All of the above`], answer: 3, explanation: `${skillName} spans multiple domains in software engineering.` },
+    { question: `What is a best practice when using ${skillName}?`, options: [`Ignoring documentation`, `Following official style guides`, `Avoiding version control`, `Skipping tests`], answer: 1, explanation: `Following official guides ensures consistent and maintainable code.` },
+    { question: `What does a "dependency" mean in the context of ${skillName}?`, options: [`A bug`, `An external library or module required`, `A configuration file`, `A deployment step`], answer: 1, explanation: `Dependencies are external packages your project relies on.` },
+    { question: `When would you use ${skillName} over alternatives?`, options: [`When performance is not a concern`, `When it provides the best fit for the use case`, `Never — alternatives are always better`, `Only in large enterprise projects`], answer: 1, explanation: `Technology choice should always be based on the specific use case.` },
+  ]
+}
 
 const DOMAIN_COLORS = {
   'Web Frontend': '#818cf8', 'Backend': '#34d399',  'DevOps': '#f59e0b',
@@ -139,37 +205,27 @@ export default function LearnCertifyPage() {
     }
   }, [])
 
-  // Load certs
+  // Load certs from localStorage
   useEffect(() => {
     setLdCerts(true)
-    authFetch('/api/v1/certs/')
-      .then(r => r.json())
-      .then(j => { if (j.success) setCerts(j.data) })
-      .finally(() => setLdCerts(false))
+    try { setCerts(loadCerts()) } catch {}
+    setLdCerts(false)
   }, [result])
 
-  // ── Start quiz ─────────────────────────────────────────────────────────────
-  const handleStartQuiz = async (sk) => {
+  // ── Start quiz (fully client-side) ──────────────────────────────────────────
+  const handleStartQuiz = (sk) => {
     setActiveSkill(sk)
     setLoadingStart(true)
     setView('quiz')
-    setQuestions([])
     setAnswers([])
     setCurrentQ(0)
     setSelected(null)
-    try {
-      const res  = await authFetch('/api/v1/certs/quiz/start', {
-        method: 'POST', body: JSON.stringify({ skill_name: sk.skill, difficulty: sk.difficulty }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.message)
-      setQuestions(json.data.questions)
-    } catch (err) {
-      toast.error(err.message)
-      setView('catalog')
-    } finally {
+    // Simulate a brief loading feel, then load questions
+    setTimeout(() => {
+      const qs = generateQuestions(sk.skill)
+      setQuestions(qs)
       setLoadingStart(false)
-    }
+    }, 800)
   }
 
   // ── Next question ──────────────────────────────────────────────────────────
@@ -185,23 +241,32 @@ export default function LearnCertifyPage() {
     }
   }
 
-  // ── Submit quiz ────────────────────────────────────────────────────────────
-  const handleSubmit = async (finalAnswers) => {
+  // ── Submit quiz (fully client-side) ─────────────────────────────────────────
+  const handleSubmit = (finalAnswers) => {
     setSubmitting(true)
-    try {
-      const res  = await authFetch('/api/v1/certs/quiz/submit', {
-        method: 'POST',
-        body: JSON.stringify({ skill_name: activeSkill.skill, answers: finalAnswers }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.message)
-      setResult(json.data)
+    setTimeout(() => {
+      const correct = finalAnswers.reduce((n, ans, i) => n + (ans === questions[i]?.answer ? 1 : 0), 0)
+      const total   = questions.length
+      const score   = Math.round((correct / total) * 100)
+      const passed  = score >= 70
+      const certId  = `DP-${activeSkill.skill.replace(/\s/g,'-').toUpperCase()}-${Date.now().toString(36).toUpperCase()}`
+      const wrongAnswers = questions
+        .map((q, i) => finalAnswers[i] !== q.answer ? {
+          question:       q.question,
+          user_answer:    q.options[finalAnswers[i]] || '(skipped)',
+          correct_answer: q.options[q.answer],
+          explanation:    q.explanation,
+        } : null)
+        .filter(Boolean)
+      const resultData = { score, correct, total, passed, xp_gained: passed ? activeSkill.xp : 0, cert_id: passed ? certId : null, wrong_answers: wrongAnswers }
+      if (passed) {
+        saveCert({ skill_name: activeSkill.skill, score, issued_at: new Date().toISOString(), unique_cert_id: certId, id: certId })
+        toast.success(`🎉 Certified in ${activeSkill.skill}! +${activeSkill.xp} XP`)
+      }
+      setResult(resultData)
       setView('results')
-    } catch (err) {
-      toast.error(err.message)
-    } finally {
       setSubmitting(false)
-    }
+    }, 600)
   }
 
   // ── Filtered catalog ───────────────────────────────────────────────────────

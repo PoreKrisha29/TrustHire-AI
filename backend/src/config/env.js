@@ -54,6 +54,7 @@ const env = {
   // Internal
   INTERNAL_API_KEY: process.env.INTERNAL_API_KEY,
   AI_SERVICE_URL: process.env.AI_SERVICE_URL || 'http://localhost:8000',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || null,
 
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),

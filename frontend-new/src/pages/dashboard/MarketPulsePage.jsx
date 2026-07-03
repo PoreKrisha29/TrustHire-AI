@@ -3,25 +3,137 @@
  *
  * DevPulse AI — Market Pulse 📊
  * Trending skills bar chart + Salary Insights + Skill Gap Analyzer.
+ * Fully client-side mock implementation.
  * Vanilla CSS-in-JS, dark glassmorphism.
  */
 
 import { useState, useEffect } from 'react'
 import useAuthStore from '@/stores/authStore'
 
-function authFetch(url, opts = {}) {
-  const token = useAuthStore.getState().token
-  return fetch(url, {
-    ...opts,
-    headers: { ...(opts.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  })
-}
-
 const ROLES = [
   'Frontend Developer', 'Backend Developer', 'Full Stack Developer',
   'DevOps Engineer', 'Data Engineer', 'ML Engineer', 'Product Manager',
   'Mobile Developer', 'Security Engineer', 'QA Engineer',
 ]
+
+const MARKET_TRENDS_MOCK = {
+  skills: [
+    { name: 'TypeScript', demand_pct: 88, delta_week: 2.4 },
+    { name: 'React', demand_pct: 85, delta_week: 1.2 },
+    { name: 'Python', demand_pct: 79, delta_week: -0.5 },
+    { name: 'Node.js', demand_pct: 74, delta_week: 0.8 },
+    { name: 'PostgreSQL', demand_pct: 70, delta_week: 1.5 },
+    { name: 'Docker', demand_pct: 68, delta_week: 0.4 },
+    { name: 'Kubernetes', demand_pct: 55, delta_week: 3.1 },
+    { name: 'FastAPI', demand_pct: 48, delta_week: 1.9 },
+  ]
+}
+
+const SALARY_DATA_MOCK = {
+  'Frontend Developer': { median: 115000, p25: 90000, p75: 145000, currency: 'USD', top_companies: ['Google', 'Meta', 'Vercel', 'Stripe'] },
+  'Backend Developer': { median: 125000, p25: 100000, p75: 160000, currency: 'USD', top_companies: ['Amazon', 'Netflix', 'Supabase', 'HashiCorp'] },
+  'Full Stack Developer': { median: 120000, p25: 95000, p75: 150000, currency: 'USD', top_companies: ['Stripe', 'Airbnb', 'GitHub', 'Linear'] },
+  'DevOps Engineer': { median: 135000, p25: 105000, p75: 170000, currency: 'USD', top_companies: ['AWS', 'Datadog', 'Cloudflare', 'Sentry'] },
+  'Data Engineer': { median: 130000, p25: 102000, p75: 165000, currency: 'USD', top_companies: ['Snowflake', 'Databricks', 'Uber', 'Scale AI'] },
+  'ML Engineer': { median: 160000, p25: 125000, p75: 210000, currency: 'USD', top_companies: ['OpenAI', 'Anthropic', 'Google Brain', 'NVIDIA'] },
+  'Product Manager': { median: 140000, p25: 110000, p75: 180000, currency: 'USD', top_companies: ['Atlassian', 'Microsoft', 'Productboard', 'Figma'] },
+  'Mobile Developer': { median: 118000, p25: 92000, p75: 148000, currency: 'USD', top_companies: ['Apple', 'Uber', 'Airbnb', 'Duolingo'] },
+  'Security Engineer': { median: 142000, p25: 112000, p75: 185000, currency: 'USD', top_companies: ['CrowdStrike', 'Okta', 'Palantir', 'Cloudflare'] },
+  'QA Engineer': { median: 85000, p25: 65000, p75: 105000, currency: 'USD', top_companies: ['BrowserStack', 'Microsoft', 'QA Wolf', 'Applitools'] },
+}
+
+const SKILL_GAPS_MOCK = {
+  'Frontend Developer': {
+    target_role: 'Frontend Developer',
+    user_skills: ['React', 'JavaScript', 'CSS3'],
+    data: {
+      priority_skill: 'TypeScript',
+      missing: ['TypeScript', 'Next.js', 'System Design'],
+      recommended_order: ['TypeScript', 'Next.js', 'System Design']
+    }
+  },
+  'Backend Developer': {
+    target_role: 'Backend Developer',
+    user_skills: ['Python', 'PostgreSQL'],
+    data: {
+      priority_skill: 'Node.js',
+      missing: ['Node.js', 'Docker', 'Redis', 'System Design'],
+      recommended_order: ['Node.js', 'Docker', 'Redis', 'System Design']
+    }
+  },
+  'Full Stack Developer': {
+    target_role: 'Full Stack Developer',
+    user_skills: ['React', 'Python', 'PostgreSQL'],
+    data: {
+      priority_skill: 'TypeScript',
+      missing: ['TypeScript', 'Node.js', 'Docker', 'Redis'],
+      recommended_order: ['TypeScript', 'Node.js', 'Docker', 'Redis']
+    }
+  },
+  'DevOps Engineer': {
+    target_role: 'DevOps Engineer',
+    user_skills: ['Docker'],
+    data: {
+      priority_skill: 'Kubernetes',
+      missing: ['Kubernetes', 'Git', 'System Design'],
+      recommended_order: ['Kubernetes', 'Git', 'System Design']
+    }
+  },
+  'Data Engineer': {
+    target_role: 'Data Engineer',
+    user_skills: ['Python', 'PostgreSQL'],
+    data: {
+      priority_skill: 'Pandas',
+      missing: ['Pandas', 'Docker', 'System Design'],
+      recommended_order: ['Pandas', 'Docker', 'System Design']
+    }
+  },
+  'ML Engineer': {
+    target_role: 'ML Engineer',
+    user_skills: ['Python'],
+    data: {
+      priority_skill: 'Scikit-learn',
+      missing: ['Scikit-learn', 'Pandas', 'System Design'],
+      recommended_order: ['Scikit-learn', 'Pandas', 'System Design']
+    }
+  },
+  'Product Manager': {
+    target_role: 'Product Manager',
+    user_skills: [],
+    data: {
+      priority_skill: 'System Design',
+      missing: ['System Design', 'Git'],
+      recommended_order: ['System Design', 'Git']
+    }
+  },
+  'Mobile Developer': {
+    target_role: 'Mobile Developer',
+    user_skills: ['React'],
+    data: {
+      priority_skill: 'React Native',
+      missing: ['React Native', 'TypeScript', 'System Design'],
+      recommended_order: ['React Native', 'TypeScript', 'System Design']
+    }
+  },
+  'Security Engineer': {
+    target_role: 'Security Engineer',
+    user_skills: ['Docker', 'Git'],
+    data: {
+      priority_skill: 'System Design',
+      missing: ['System Design', 'Kubernetes'],
+      recommended_order: ['System Design', 'Kubernetes']
+    }
+  },
+  'QA Engineer': {
+    target_role: 'QA Engineer',
+    user_skills: ['React', 'JavaScript'],
+    data: {
+      priority_skill: 'Git',
+      missing: ['Git', 'TypeScript', 'Docker'],
+      recommended_order: ['Git', 'TypeScript', 'Docker']
+    }
+  },
+}
 
 // ── Trending skills bar chart ─────────────────────────────────────────────────
 function TrendingSkills({ skills }) {
@@ -122,11 +234,9 @@ function SkillGapSection({ targetRole }) {
 
   const loadGap = async (role = target) => {
     setLoading(true)
-    try {
-      const res  = await authFetch(`/api/v1/market/gap?target=${encodeURIComponent(role)}`)
-      const json = await res.json()
-      if (json.success) setGap(json)
-    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 500))
+    const mockData = SKILL_GAPS_MOCK[role] || SKILL_GAPS_MOCK['Full Stack Developer']
+    setGap(mockData)
     setLoading(false)
   }
 
@@ -209,19 +319,24 @@ export default function MarketPulsePage() {
   const user = useAuthStore(s => s.user)
 
   useEffect(() => {
-    authFetch('/api/v1/market/trends')
-      .then(r => r.json())
-      .then(j => { if (j.success) { setTrends(j.data); setUpdated(new Date()) } })
-      .finally(() => setLdTrends(false))
+    // Load local mock trends
+    setTimeout(() => {
+      setTrends(MARKET_TRENDS_MOCK)
+      setUpdated(new Date())
+      setLdTrends(false)
+    }, 400)
   }, [])
 
   const loadSalary = async (role = salaryRole) => {
     setSalaryLoading(true)
-    try {
-      const res  = await authFetch(`/api/v1/market/salary?role=${encodeURIComponent(role)}`)
-      const json = await res.json()
-      if (json.success) setSalary(json)
-    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 500))
+    const mockSal = SALARY_DATA_MOCK[role]
+    if (mockSal) {
+      setSalary({
+        role,
+        data: mockSal
+      })
+    }
     setSalaryLoading(false)
   }
 

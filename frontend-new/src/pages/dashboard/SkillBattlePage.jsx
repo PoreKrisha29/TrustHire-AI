@@ -3,31 +3,56 @@
  *
  * DevPulse AI — Skill Battle Arena
  * State machine: "lobby" | "waiting" | "battle" | "results"
+ * Fully client-side matchmaking and gameplay simulation.
  * Dark glassmorphism, vanilla CSS-in-JS.
- * Polling-based matchmaking (no WebSockets).
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import useAuthStore from '@/stores/authStore'
 
-function authFetch(url, opts = {}) {
-  const token = useAuthStore.getState().token
-  return fetch(url, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(opts.headers || {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  })
-}
-
 // ── Level colour map ─────────────────────────────────────────────────────────
 const LEVEL_COLORS = {
   Intern: '#94a3b8', Junior: '#22d3ee', Mid: '#34d399',
   Senior: '#a78bfa', Principal: '#f59e0b', Legend: '#f97316',
 }
+
+const LEADERBOARD_MOCK = [
+  { rank: 1, username: 'hyperCode', target_role: 'Full Stack Developer', level: 'Legend', total_xp: 12500 },
+  { rank: 2, username: 'elixir_whisperer', target_role: 'Backend Developer', level: 'Principal', total_xp: 9400 },
+  { rank: 3, username: 'rust_ace', target_role: 'Security Engineer', level: 'Principal', total_xp: 8800 },
+  { rank: 4, username: 'npm_install_suicide', target_role: 'Frontend Developer', level: 'Senior', total_xp: 7200 },
+  { rank: 5, username: 'data_lord', target_role: 'Data Engineer', level: 'Mid', total_xp: 5900 },
+  { rank: 6, username: 'docker_daddy', target_role: 'DevOps Engineer', level: 'Mid', total_xp: 4100 },
+]
+
+const DAILY_CHALLENGE_MOCK = {
+  skill: 'JavaScript',
+  question: 'What is the output of `console.log(typeof null)` in JavaScript?',
+  options: ['"object"', '"null"', '"undefined"', '"string"'],
+  correct_answer: 0,
+  explanation: 'In JavaScript, `typeof null` is an historical bug that returns "object".'
+}
+
+const BATTLE_QUESTIONS_MOCK = {
+  React: [
+    { question: 'Which React Hook is used to cache a computed value between re-renders?', options: ['useMemo', 'useCallback', 'useRef', 'useEffect'], answer: 0 },
+    { question: 'What is the correct syntax to pass a prop called "isAdmin" with a value of true?', options: ['<Component isAdmin={true} />', '<Component isAdmin="true" />', '<Component true={isAdmin} />', '<Component isAdmin />'], answer: 0 },
+    { question: 'Does setting state in a React event handler immediately update the variable in the next line?', options: ['Yes, React updates synchronously', 'No, React state updates are batched/asynchronous', 'Only in development mode', 'Only for functional components'], answer: 1 },
+  ],
+  Python: [
+    { question: 'What is the speed complexity of searching a value in a balanced Set in Python?', options: ['O(1) average', 'O(N)', 'O(log N)', 'O(N log N)'], answer: 0 },
+    { question: 'Which keyword is used to define a generator function in Python?', options: ['yield', 'generate', 'yield from', 'def with return'], answer: 0 },
+    { question: 'What is the result of `2 ** 3` in Python?', options: ['6', '8', '9', '5'], answer: 1 },
+  ],
+  default: [
+    { question: 'Which protocol is standard for secure communication over the web?', options: ['HTTPS', 'FTP', 'SMTP', 'HTTP'], answer: 0 },
+    { question: 'Which data structure follows the LIFO (Last In First Out) principle?', options: ['Stack', 'Queue', 'Array', 'Set'], answer: 0 },
+    { question: 'What does API stand for?', options: ['Application Programming Interface', 'Array Program Influx', 'Advanced Protocol Integration', 'Application Process Indicator'], answer: 0 },
+  ]
+}
+
+const OPPONENT_NAMES = ['CodeWarrior', 'ByteSized', 'GitGud', 'NerdAlert', 'CoffeeCoder', 'AlgoMaster']
 
 // ── CSS confetti ─────────────────────────────────────────────────────────────
 const CONFETTI_CSS = `
@@ -51,7 +76,6 @@ const CONFETTI_CSS = `
 @keyframes dp-xp        { 0%{transform:scale(0);opacity:0} 60%{transform:scale(1.25)} 100%{transform:scale(1);opacity:1} }
 `
 
-// ── Confetti burst ────────────────────────────────────────────────────────────
 function spawnConfetti() {
   const colors = ['#6366f1','#a78bfa','#22c55e','#f59e0b','#f472b6','#22d3ee']
   for (let i = 0; i < 50; i++) {
@@ -97,7 +121,7 @@ function TimerBar({ seconds = 30, onTimeout }) {
 }
 
 // ── Score strip ───────────────────────────────────────────────────────────────
-function ScoreStrip({ myScore, oppScore, total }) {
+function ScoreStrip({ myScore, oppScore, total, opponentName }) {
   return (
     <div style={S.scoreStrip}>
       <div style={{ textAlign:'center' }}>
@@ -106,7 +130,7 @@ function ScoreStrip({ myScore, oppScore, total }) {
       </div>
       <div style={{ fontSize:14, color:'#334155' }}>of {total} ⚔️</div>
       <div style={{ textAlign:'center' }}>
-        <p style={{ fontSize:11, color:'#64748b', margin:'0 0 2px' }}>Opponent</p>
+        <p style={{ fontSize:11, color:'#64748b', margin:'0 0 2px' }}>{opponentName}</p>
         <p style={{ fontSize:22, fontWeight:800, color:'#f87171' }}>
           {oppScore !== null ? oppScore : '?'}
         </p>
@@ -121,10 +145,10 @@ function LeaderboardTab() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    authFetch('/api/v1/battle/leaderboard')
-      .then(r => r.json())
-      .then(j => { if (j.success) setRows(j.data) })
-      .finally(() => setLoading(false))
+    setTimeout(() => {
+      setRows(LEADERBOARD_MOCK)
+      setLoading(false)
+    }, 450)
   }, [])
 
   if (loading) return <div style={{ textAlign:'center', padding:40 }}><div style={S.spinner}/></div>
@@ -166,26 +190,33 @@ function DailyChallengeCard({ onAnswer }) {
   const [loading,   setLoading]   = useState(true)
 
   useEffect(() => {
-    authFetch('/api/v1/battle/daily')
-      .then(r => r.json())
-      .then(j => { if (j.success) setChallenge(j.data) })
-      .finally(() => setLoading(false))
+    setTimeout(() => {
+      // Check if already answered in local storage
+      const dailyDone = localStorage.getItem('dp_daily_done') === new Date().toDateString()
+      if (dailyDone) {
+        setResult({ already: true })
+        setAnswered(true)
+      }
+      setChallenge(DAILY_CHALLENGE_MOCK)
+      setLoading(false)
+    }, 400)
   }, [])
 
-  const handleSubmit = async (idx) => {
+  const handleSubmit = (idx) => {
     if (answered) return
     setSelected(idx)
     setAnswered(true)
-    try {
-      const res  = await authFetch('/api/v1/battle/daily', { method:'POST', body:JSON.stringify({ answer:idx }) })
-      const json = await res.json()
-      if (json.success) {
-        setResult(json.data)
-        if (json.data.correct) onAnswer?.(json.data.xp_gained)
-      } else if (res.status === 409) {
-        setResult({ correct:null, already:true })
-      }
-    } catch {}
+    setTimeout(() => {
+      const isCorrect = idx === DAILY_CHALLENGE_MOCK.correct_answer
+      setResult({
+        correct: isCorrect,
+        correct_answer: DAILY_CHALLENGE_MOCK.correct_answer,
+        explanation: DAILY_CHALLENGE_MOCK.explanation,
+        xp_gained: 25
+      })
+      localStorage.setItem('dp_daily_done', new Date().toDateString())
+      if (isCorrect) onAnswer?.(25)
+    }, 300)
   }
 
   if (loading) return <div style={S.dailyCard}><div style={S.spinner}/></div>
@@ -247,7 +278,6 @@ export default function SkillBattlePage() {
   const [activeTab,   setActiveTab]  = useState('challenge') // 'challenge' | 'leaderboard' | 'history'
   const [skillInput,  setSkillInput] = useState('')
   const [finding,     setFinding]    = useState(false)
-  const [roomId,      setRoomId]     = useState(null)
   const [roomSkill,   setRoomSkill]  = useState('')
   const [waitingSecs, setWaitingSecs]= useState(0)
   const [questions,   setQuestions]  = useState([])
@@ -255,120 +285,76 @@ export default function SkillBattlePage() {
   const [selected,    setSelected]   = useState(null)
   const [myAnswers,   setMyAnswers]  = useState([])
   const [myScore,     setMyScore]    = useState(0)
-  const [oppScore,    setOppScore]   = useState(null)
+  const [oppScore,    setOppScore]   = useState(0)
+  const [opponentName, setOpponentName] = useState('')
   const [startTime,   setStartTime]  = useState(null)
   const [submitting,  setSubmitting] = useState(false)
   const [result,      setResult]     = useState(null)
   const [history,     setHistory]    = useState([])
   const [loadHist,    setLoadHist]   = useState(false)
 
-  const pollRef    = useRef(null)
   const waitRef    = useRef(null)
+  const matchRef   = useRef(null)
+  const oppSimRef  = useRef(null)
 
-  // ── Cleanup on unmount ────────────────────────────────────────────────────
   useEffect(() => () => {
-    clearInterval(pollRef.current)
     clearInterval(waitRef.current)
+    clearTimeout(matchRef.current)
+    clearInterval(oppSimRef.current)
   }, [])
 
-  // ── Find battle ───────────────────────────────────────────────────────────
-  const handleFind = async () => {
+  // ── Find battle (Client simulated Matchmaking) ───────────────────────────
+  const handleFind = () => {
     if (!skillInput.trim()) { toast.error('Enter a skill to battle on.'); return }
     setFinding(true)
-    try {
-      const res  = await authFetch('/api/v1/battle/find', {
-        method:'POST', body:JSON.stringify({ skill:skillInput.trim() }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.message)
-      setRoomId(json.data.room_id)
-      setRoomSkill(json.data.skill)
-      if (json.data.status === 'active') {
-        await joinActiveRoom(json.data.room_id)
-      } else {
-        setView('waiting')
-        startWaiting(json.data.room_id)
-      }
-    } catch (err) {
-      toast.error(err.message)
-    } finally {
-      setFinding(false)
-    }
-  }
+    const normalized = skillInput.trim()
+    setRoomSkill(normalized)
 
-  const joinActiveRoom = async (rid) => {
-    const res  = await authFetch(`/api/v1/battle/room/${rid}`)
-    const json = await res.json()
-    if (!json.success) return
-    const room = json.data
-    if (room.status === 'active' && room.questions?.length > 0) {
-      setQuestions(room.questions)
-      setMyScore(0)
-      setOppScore(room.opp_score)
-      setCurrentQ(0)
-      setSelected(null)
-      setMyAnswers([])
-      setStartTime(Date.now())
-      setView('battle')
-      startOpponentPoll(rid)
-    }
-  }
-
-  // ── Waiting + poll for opponent ───────────────────────────────────────────
-  const startWaiting = (rid) => {
+    // Simulate search latency of 3 seconds
+    setView('waiting')
     setWaitingSecs(0)
     clearInterval(waitRef.current)
-    clearInterval(pollRef.current)
-
-    // Increment waiting seconds counter
+    
     waitRef.current = setInterval(() => {
       setWaitingSecs(s => s + 1)
     }, 1000)
 
-    // Poll for opponent every 3s
-    pollRef.current = setInterval(async () => {
-      try {
-        const res  = await authFetch(`/api/v1/battle/room/${rid}`)
-        const json = await res.json()
-        if (!json.success) return
-        const room = json.data
-        if (room.status === 'active' && room.questions?.length > 0) {
-          clearInterval(pollRef.current)
-          clearInterval(waitRef.current)
-          setQuestions(room.questions)
-          setMyScore(0)
-          setOppScore(null)
-          setCurrentQ(0)
-          setSelected(null)
-          setMyAnswers([])
-          setStartTime(Date.now())
-          setView('battle')
-          startOpponentPoll(rid)
-        }
-      } catch {}
-    }, 3000)
-  }
+    matchRef.current = setTimeout(() => {
+      clearInterval(waitRef.current)
+      
+      // Select questions & opponent
+      const qSet = BATTLE_QUESTIONS_MOCK[normalized] || BATTLE_QUESTIONS_MOCK.default
+      const name = OPPONENT_NAMES[Math.floor(Math.random() * OPPONENT_NAMES.length)]
+      
+      setQuestions(qSet)
+      setMyScore(0)
+      setOppScore(0)
+      setOpponentName(name)
+      setCurrentQ(0)
+      setSelected(null)
+      setMyAnswers([])
+      setStartTime(Date.now())
+      setFinding(false)
+      setView('battle')
 
-  // ── Poll opponent score during battle ─────────────────────────────────────
-  const startOpponentPoll = (rid) => {
-    clearInterval(pollRef.current)
-    pollRef.current = setInterval(async () => {
-      try {
-        const res  = await authFetch(`/api/v1/battle/room/${rid}`)
-        const json = await res.json()
-        if (json.success && json.data.opp_score !== null) {
-          setOppScore(json.data.opp_score)
+      // Simulate opponent score increments periodically
+      let simulatedOpponentScore = 0
+      clearInterval(oppSimRef.current)
+      oppSimRef.current = setInterval(() => {
+        if (Math.random() > 0.4 && simulatedOpponentScore < qSet.length) {
+          simulatedOpponentScore += 1
+          setOppScore(simulatedOpponentScore)
         }
-        if (json.data.status === 'done') clearInterval(pollRef.current)
-      } catch {}
-    }, 3000)
+      }, 7000)
+
+    }, 3200)
   }
 
   // ── Cancel waiting ────────────────────────────────────────────────────────
   const handleCancel = () => {
-    clearInterval(pollRef.current)
     clearInterval(waitRef.current)
-    setRoomId(null)
+    clearTimeout(matchRef.current)
+    setFinding(false)
     setView('lobby')
   }
 
@@ -376,6 +362,8 @@ export default function SkillBattlePage() {
   const handleAnswer = (optIdx) => {
     if (selected !== null) return
     setSelected(optIdx)
+    const isCorrect = optIdx === questions[currentQ].answer
+    if (isCorrect) setMyScore(s => s + 1)
   }
 
   // ── Next / auto-advance ───────────────────────────────────────────────────
@@ -387,53 +375,64 @@ export default function SkillBattlePage() {
 
     const isLast = currentQ >= questions.length - 1
     if (isLast) {
-      handleSubmitBattle(newAns)
+      clearInterval(oppSimRef.current)
+      handleSubmitBattle(myScore)
     } else {
       setCurrentQ(q => q + 1)
     }
-  }, [selected, myAnswers, currentQ, questions])
+  }, [selected, myAnswers, currentQ, questions, myScore])
 
   // ── Submit battle ─────────────────────────────────────────────────────────
-  const handleSubmitBattle = async (finalAnswers) => {
+  const handleSubmitBattle = (finalScore) => {
     setSubmitting(true)
-    clearInterval(pollRef.current)
-    const timeTaken = Math.round((Date.now() - (startTime || Date.now())) / 1000)
-    try {
-      const res  = await authFetch('/api/v1/battle/submit', {
-        method:'POST',
-        body:JSON.stringify({ room_id:roomId, answers:finalAnswers, time_taken:timeTaken }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.message)
-      setResult(json.data)
-      setMyScore(json.data.score)
+    setTimeout(() => {
+      // Opponent score final balance check
+      const finalOppScore = oppScore
+      const isWinner = finalScore > finalOppScore
+      const isTie = finalScore === finalOppScore
+      const xpGained = isWinner ? 150 : isTie ? 75 : 50
+
+      const matchResult = {
+        is_winner: isWinner,
+        is_tie: isTie,
+        score: finalScore,
+        total: questions.length,
+        xp_gained: xpGained,
+      }
+
+      setResult(matchResult)
       setView('results')
-      if (json.data.is_winner) spawnConfetti()
-    } catch (err) {
-      toast.error(err.message)
-      setView('lobby')
-    } finally {
+      if (isWinner) spawnConfetti()
+
+      // Save to history
+      const savedHistory = JSON.parse(localStorage.getItem('dp_battle_history') || '[]')
+      const newRecord = {
+        skill: roomSkill,
+        created_at: new Date().toISOString(),
+        my_score: finalScore,
+        result: isWinner ? 'win' : isTie ? 'tie' : 'loss',
+      }
+      localStorage.setItem('dp_battle_history', JSON.stringify([newRecord, ...savedHistory]))
       setSubmitting(false)
-    }
+    }, 650)
   }
 
   // ── Load history ──────────────────────────────────────────────────────────
-  const loadHistory = async () => {
+  const loadHistory = () => {
     setLoadHist(true)
-    try {
-      const res  = await authFetch('/api/v1/battle/history')
-      const json = await res.json()
-      if (json.success) setHistory(json.data)
-    } catch {}
-    setLoadHist(false)
+    setTimeout(() => {
+      try {
+        const hist = JSON.parse(localStorage.getItem('dp_battle_history') || '[]')
+        setHistory(hist)
+      } catch {}
+      setLoadHist(false)
+    }, 300)
   }
 
   const handleTabChange = (tab) => {
     setActiveTab(tab)
     if (tab === 'history') loadHistory()
   }
-
-  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div style={S.page}>
@@ -556,13 +555,8 @@ export default function SkillBattlePage() {
             Finding opponent for <span style={{ color:'#818cf8' }}>{roomSkill}</span>…
           </h2>
           <p style={{ fontSize:13, color:'#64748b', marginBottom:4 }}>
-            {waitingSecs < 30 ? `Searching… ${waitingSecs}s` : '⏳ No opponent found yet — still searching…'}
+            Searching… {waitingSecs}s
           </p>
-          {waitingSecs >= 30 && (
-            <p style={{ fontSize:12, color:'#f59e0b', marginBottom:16 }}>
-              Try a popular skill like React or Python for faster matchmaking.
-            </p>
-          )}
           <button onClick={handleCancel} style={S.cancelBtn}>✕ Cancel</button>
         </div>
       )}
@@ -621,7 +615,7 @@ export default function SkillBattlePage() {
           </div>
 
           {/* Score strip */}
-          <ScoreStrip myScore={myScore} oppScore={oppScore} total={questions.length} />
+          <ScoreStrip myScore={myScore} oppScore={oppScore} total={questions.length} opponentName={opponentName} />
 
           {/* Next button */}
           {selected !== null && (
@@ -696,7 +690,6 @@ export default function SkillBattlePage() {
                   setSkillInput('')
                   setView('lobby')
                   setResult(null)
-                  clearInterval(pollRef.current)
                 }}
                 style={{ ...S.backBtn, flex:1 }}
               >
@@ -800,70 +793,55 @@ const S = {
 
   // Battle
   questionCard: {
-    background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)',
-    borderRadius:14, padding:'22px',
+    background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:12, padding:'20px', marginBottom:12,
   },
   optionBtn: {
-    display:'flex', alignItems:'center', gap:12,
-    padding:'13px 16px', borderRadius:12,
-    textAlign:'left', fontSize:14, fontWeight:500,
-    transition:'all 0.15s', width:'100%',
+    display:'flex', alignItems:'center', gap:10,
+    padding:'12px 14px', borderRadius:10, cursor:'pointer',
+    fontSize:13, fontWeight:500, transition:'all 0.15s', width:'100%',
+    textAlign:'left',
   },
   optionLetter: {
-    width:28, height:28, borderRadius:8,
-    display:'flex', alignItems:'center', justifyContent:'center',
-    fontSize:12, fontWeight:800, flexShrink:0, transition:'background 0.15s',
-    color:'#e2e8f0',
+    width:24, height:24, borderRadius:6, display:'flex',
+    alignItems:'center', justifyContent:'center',
+    fontSize:11, fontWeight:800, flexShrink:0, transition:'background 0.15s',
+    color:'#fff',
   },
   scoreStrip: {
-    display:'flex', justifyContent:'space-between', alignItems:'center',
-    background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)',
+    display:'flex', justifyContent:'space-around', alignItems:'center',
+    background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.05)',
     borderRadius:12, padding:'12px 20px', marginTop:16,
   },
   nextBtn: {
-    display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-    width:'100%', padding:'14px', borderRadius:12,
-    background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none',
-    color:'#fff', fontSize:15, fontWeight:700,
-    boxShadow:'0 4px 20px rgba(99,102,241,0.4)', cursor:'pointer',
-  },
-  backBtn: {
-    padding:'12px 16px', background:'rgba(255,255,255,0.06)',
-    border:'1px solid rgba(255,255,255,0.1)', borderRadius:10,
-    color:'#94a3b8', fontSize:13, fontWeight:500, cursor:'pointer',
     display:'flex', alignItems:'center', justifyContent:'center',
+    width:'100%', padding:'12px', borderRadius:10,
+    background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none',
+    color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer',
+    boxShadow:'0 4px 14px rgba(99,102,241,0.3)',
   },
 
   // Results
   resultsCard: {
     background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)',
-    borderRadius:18, padding:'28px 24px',
+    borderRadius:16, padding:'28px 24px',
   },
   resultBanner: {
-    borderRadius:14, padding:'24px', textAlign:'center',
+    borderRadius:12, padding:20, textAlign:'center',
   },
-  scoreGrid: {
-    display:'grid', gridTemplateColumns:'1fr 1fr',
-    background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)',
-    borderRadius:12, overflow:'hidden',
-  },
-  scoreCell: { padding:'16px', textAlign:'center' },
   xpChip: {
-    fontSize:18, fontWeight:800, color:'#818cf8',
-    background:'rgba(99,102,241,0.15)', border:'1px solid rgba(129,140,248,0.35)',
-    borderRadius:99, padding:'10px 24px',
-    boxShadow:'0 0 24px rgba(99,102,241,0.35)',
-    display:'inline-block',
+    fontSize:16, fontWeight:800, color:'#f59e0b',
+    background:'rgba(245,158,11,0.12)', border:'1px solid rgba(245,158,11,0.35)',
+    borderRadius:99, padding:'8px 24px', boxShadow:'0 0 20px rgba(245,158,11,0.25)',
   },
-
-  spinner: {
-    width:30, height:30, border:'3px solid rgba(255,255,255,0.08)',
-    borderTop:'3px solid #6366f1', borderRadius:'50%',
-    animation:'dp-spin 0.8s linear infinite', margin:'0 auto',
+  scoreGrid: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:16 },
+  scoreCell: { textAlign:'center', padding:12 },
+  backBtn: {
+    padding:'10px 18px', background:'rgba(255,255,255,0.06)',
+    border:'1px solid rgba(255,255,255,0.1)', borderRadius:10,
+    color:'#94a3b8', fontSize:13, fontWeight:500, cursor:'pointer',
+    fontFamily:"'Inter',system-ui,sans-serif",
   },
-  spinnerInline: {
-    display:'inline-block', width:14, height:14,
-    border:'2px solid rgba(255,255,255,0.3)', borderTop:'2px solid #fff',
-    borderRadius:'50%', animation:'dp-spin 0.7s linear infinite',
-  },
+  spinner: { width:24, height:24, border:'2px solid rgba(255,255,255,0.08)', borderTop:'2px solid #6366f1', borderRadius:'50%', animation:'dp-spin 0.8s linear infinite', margin:'0 auto' },
+  spinnerInline: { display:'inline-block', width:14, height:14, border:'2px solid rgba(255,255,255,0.3)', borderTop:'2px solid #fff', borderRadius:'50%', animation:'dp-spin 0.7s linear infinite' },
 }

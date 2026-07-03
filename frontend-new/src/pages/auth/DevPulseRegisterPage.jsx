@@ -50,7 +50,12 @@ export default function DevPulseRegisterPage() {
     if (Object.keys(errs).length) { setErrors(errs); return }
     setErrors({})
 
-    const result = await register(form)
+    const result = await register({
+      fullName: form.full_name,
+      email:    form.email,
+      password: form.password,
+      role:     'CANDIDATE',
+    })
     if (result.success) {
       toast.success('Account created! Sign in to start your journey 🚀')
       navigate('/login')

@@ -10,7 +10,7 @@ import { create } from 'zustand'
 
 const TOKEN_KEY   = 'vish_seeker_token'
 const REFRESH_KEY = 'vish_seeker_refresh'
-const API_BASE    = '/api/v1/auth'
+const API_BASE    = '/api/auth'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -84,9 +84,9 @@ const useAuthStore = create((set, get) => ({
         method: 'POST',
         body:   JSON.stringify({ email, password }),
       })
-      const { user, access, refresh } = json.data
-      persistTokens(access, refresh)
-      set({ user, token: access, isAuthenticated: true, isLoading: false })
+      const { user, accessToken, refreshToken } = json.data
+      persistTokens(accessToken, refreshToken)
+      set({ user, token: accessToken, isAuthenticated: true, isLoading: false })
       return { success: true }
     } catch (err) {
       const message =
@@ -99,12 +99,12 @@ const useAuthStore = create((set, get) => ({
   },
 
   // ── register ──────────────────────────────────────────────────────────────
-  register: async ({ full_name, email, password, confirm_password }) => {
+  register: async ({ fullName, email, password, role = 'CANDIDATE' }) => {
     set({ isLoading: true, error: null })
     try {
       await apiFetch('/register', {
         method: 'POST',
-        body:   JSON.stringify({ full_name, email, password, confirm_password }),
+        body:   JSON.stringify({ fullName, email, password, role }),
       })
       set({ isLoading: false })
       return { success: true }
@@ -134,9 +134,9 @@ const useAuthStore = create((set, get) => ({
         method: 'POST',
         body:   JSON.stringify({ refresh }),
       })
-      const { access, refresh: newRefresh } = json.data
-      persistTokens(access, newRefresh)
-      set({ token: access, isAuthenticated: true })
+      const { accessToken, refreshToken: newRefresh } = json.data
+      persistTokens(accessToken, newRefresh)
+      set({ token: accessToken, isAuthenticated: true })
 
       // Re-fetch user profile
       const meJson = await apiFetch('/me', {

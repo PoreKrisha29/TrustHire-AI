@@ -8,18 +8,119 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import useAuthStore from '@/stores/authStore'
 
-function authFetch(url, opts = {}) {
-  const token = useAuthStore.getState().token
-  return fetch(url, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(opts.headers || {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  })
+// ── Local question bank (role × round_type) ─────────────────────────────
+const INTERVIEW_QUESTIONS = {
+  technical: {
+    'Frontend Dev':  [
+      'Explain the difference between controlled and uncontrolled components in React.',
+      'How does the browser rendering pipeline work? What triggers a reflow vs repaint?',
+      'Describe the CSS box model and how box-sizing affects layout.',
+      'What are Web Workers and when would you use them?',
+      'Explain how you would optimise a React application that re-renders too frequently.',
+    ],
+    'Backend Dev':   [
+      'Explain the difference between SQL INNER JOIN, LEFT JOIN and FULL OUTER JOIN.',
+      'How would you design a rate-limiting system for a public REST API?',
+      'What is the N+1 query problem and how do you avoid it?',
+      'Describe how you would implement JWT authentication from scratch.',
+      'How does database indexing work and what are the trade-offs?',
+    ],
+    'Full Stack':    [
+      'Walk me through how a browser request travels from the URL bar to a response on screen.',
+      'How would you design a real-time notification system?',
+      'Explain CORS and how you would handle it correctly in a full-stack app.',
+      'What is the difference between REST and GraphQL? When would you choose each?',
+      'How would you implement optimistic UI updates?',
+    ],
+    'DevOps':        [
+      'Explain the difference between a Docker image and a Docker container.',
+      'How does Kubernetes handle pod scheduling and what factors affect it?',
+      'Describe a CI/CD pipeline you have built or maintained.',
+      'What are the key differences between horizontal and vertical scaling?',
+      'How would you diagnose a sudden spike in CPU usage on a production server?',
+    ],
+    'Data Engineer': [
+      'Explain the difference between a data warehouse and a data lake.',
+      'What is the CAP theorem and how does it apply to distributed databases?',
+      'Describe how you would build a real-time data pipeline.',
+      'What are window functions in SQL and give an example use case.',
+      'How would you handle late-arriving data in a streaming pipeline?',
+    ],
+  },
+  hr: {
+    default: [
+      'Tell me about a time you had a conflict with a teammate. How did you resolve it?',
+      'Describe a project where you had to learn something completely new under a tight deadline.',
+      'What is your approach when you disagree with a technical decision made by your manager?',
+      'Tell me about a time you failed. What did you learn from it?',
+      'How do you prioritise tasks when you have multiple deadlines competing for your time?',
+    ],
+  },
+  system_design: {
+    'Frontend Dev':  [
+      'Design a scalable component library that can be shared across multiple React apps.',
+      'How would you design a client-side caching strategy for a high-traffic dashboard?',
+      'Design a drag-and-drop kanban board with real-time collaboration.',
+      'How would you architect a micro-frontend system?',
+      'Design a performant infinite scroll feed with live updates.',
+    ],
+    default: [
+      'Design a URL shortener like bit.ly. Walk me through the architecture.',
+      'How would you design a distributed job queue system?',
+      'Design a notification delivery system that handles 1M users.',
+      'How would you design a scalable file upload service?',
+      'Design a real-time collaborative document editor.',
+    ],
+  },
+}
+
+// ── Model answers for feedback ───────────────────────────────────────
+const MODEL_ANSWERS = {
+  'Explain the difference between controlled and uncontrolled components in React.': 'A controlled component derives its value from React state and updates via onChange handlers. An uncontrolled component stores its value in the DOM, accessed via refs. Controlled components are preferred for complex forms needing validation or conditional rendering.',
+  'Explain the difference between SQL INNER JOIN, LEFT JOIN and FULL OUTER JOIN.': 'INNER JOIN returns only matching rows from both tables. LEFT JOIN returns all rows from the left table plus matching rows from the right (NULLs for no match). FULL OUTER JOIN returns all rows from both tables, with NULLs where there is no match on either side.',
+  'Design a URL shortener like bit.ly. Walk me through the architecture.': 'Use a hash function (base-62 encoding of an auto-increment ID) to create short codes. Store mappings in a relational DB. Add a Redis cache layer for read-heavy lookups (99% of traffic is reads). Use a CDN for the redirect responses. For analytics, push click events to a Kafka topic consumed by a separate analytics service.',
+}
+
+// ── Local grading engine ───────────────────────────────────────────
+function gradeAnswer(question, answer, roundType) {
+  const len    = answer.trim().split(/\s+/).length
+  const lower  = answer.toLowerCase()
+
+  // Keywords that indicate quality
+  const techKw = ['because', 'example', 'used', 'implemented', 'difference', 'however', 'performance', 'scalab', 'cach', 'index', 'async', 'state', 'component', 'database', 'api', 'server', 'client', 'deploy', 'test']
+  const hrKw   = ['team', 'communic', 'resolved', 'learned', 'outcome', 'collaborat', 'challenge', 'result', 'decided', 'approach', 'priorit', 'deadline', 'feedback']
+
+  const keywords = roundType === 'hr' ? hrKw : techKw
+  const kwHits   = keywords.filter(kw => lower.includes(kw)).length
+
+  // Scoring: length (max 4) + keyword coverage (max 4) + structure (max 2)
+  const lenScore = Math.min(4, Math.floor(len / 30))
+  const kwScore  = Math.min(4, kwHits)
+  const hasExample = lower.includes('example') || lower.includes('instance') || lower.includes('once') || lower.includes('when i') ? 1 : 0
+  const hasClear   = len > 20 && (lower.endsWith('.') || lower.endsWith('!')) ? 1 : 0
+
+  const raw   = lenScore + kwScore + hasExample + hasClear
+  const score = Math.max(1, Math.min(10, raw + (len > 10 ? 1 : 0)))
+
+  const feedbacks = [
+    score >= 8 ? 'Excellent response! Clear, detailed, and well-structured with concrete examples.' : null,
+    score >= 6 ? 'Good answer with solid understanding. Adding a concrete example would make it even stronger.' : null,
+    score >= 4 ? 'Decent start, but could use more depth. Try the STAR format: Situation, Task, Action, Result.' : null,
+    'The answer is too brief. Interviewers expect detailed explanations with real-world examples.',
+  ].filter(Boolean)
+
+  return {
+    score,
+    feedback: feedbacks[0],
+    model_answer: MODEL_ANSWERS[question] || `A strong answer should explain the core concept clearly, compare alternatives if applicable, and back claims with a real-world example from your experience. Aim for 3-5 sentences minimum.`,
+  }
+}
+
+function getQuestions(roleId, roundType) {
+  const bank = INTERVIEW_QUESTIONS[roundType]
+  if (!bank) return INTERVIEW_QUESTIONS.technical.default || []
+  return bank[roleId] || bank.default || Object.values(INTERVIEW_QUESTIONS.technical)[0]
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -113,168 +214,84 @@ function FeedbackDrawer({ grade, onNext, isLast, loading }) {
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Main page ────────────────────────────────────────────────────────────
 export default function MockInterviewPage() {
   const [view,       setView]     = useState('setup')
   const [role,       setRole]     = useState(null)
   const [roundType,  setRound]    = useState(null)
   const [starting,   setStarting] = useState(false)
 
-  // Interview state
-  const [sessionId,  setSessionId]  = useState(null)
-  const [questionIdx,setQIdx]       = useState(0)
-  const [totalQ,     setTotalQ]     = useState(5)
-  const [currentQ,   setCurrentQ]   = useState('')
-  const [userAnswer, setUserAnswer] = useState('')
-  const [grade,      setGrade]      = useState(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [showDrawer, setShowDrawer] = useState(false)
-  const [isLast,     setIsLast]     = useState(false)
+  // Interview state (all client-side)
+  const [questions,   setQuestions]  = useState([])
+  const [questionIdx, setQIdx]       = useState(0)
+  const [currentQ,    setCurrentQ]   = useState('')
+  const [userAnswer,  setUserAnswer] = useState('')
+  const [grade,       setGrade]      = useState(null)
+  const [submitting,  setSubmitting] = useState(false)
+  const [showDrawer,  setShowDrawer] = useState(false)
+  const [isLast,      setIsLast]     = useState(false)
+  const [gradedAll,   setGradedAll]  = useState([])
 
   // Results
-  const [result,     setResult]     = useState(null)
-  const [sessions,   setSessions]   = useState([])
-  const [loadingSess,setLoadSess]   = useState(false)
+  const [result,     setResult]   = useState(null)
+  const [sessions,   setSessions] = useState([])
 
-  // ── Start interview ────────────────────────────────────────────────────────
-  const handleStart = async () => {
+  // ── Start interview (client-side) ──────────────────────────────────────
+  const handleStart = () => {
     if (!role || !roundType) { toast.error('Select a role and round type.'); return }
     setStarting(true)
-    try {
-      const res  = await authFetch('/api/v1/interview/start', {
-        method: 'POST', body: JSON.stringify({ role: role.id, round_type: roundType.id }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.message)
-      setSessionId(json.data.session_id)
-      setTotalQ(json.data.total)
-      setCurrentQ(json.data.question)
+    setTimeout(() => {
+      const qs = getQuestions(role.id, roundType.id)
+      setQuestions(qs)
       setQIdx(0)
+      setCurrentQ(qs[0])
       setUserAnswer('')
       setGrade(null)
       setShowDrawer(false)
-      setIsLast(false)
+      setIsLast(qs.length === 1)
+      setGradedAll([])
+      setResult(null)
       setView('interview')
-    } catch (err) {
-      toast.error(err.message)
-    } finally {
       setStarting(false)
-    }
+    }, 600)
   }
 
-  // ── Submit answer ──────────────────────────────────────────────────────────
-  const handleSubmitAnswer = async () => {
+  // ── Submit answer (client-side grader) ────────────────────────────────────
+  const handleSubmitFull = () => {
     if (!userAnswer.trim()) { toast.error('Please type an answer.'); return }
     setSubmitting(true)
-    try {
-      const res  = await authFetch('/api/v1/interview/answer', {
-        method: 'POST',
-        body: JSON.stringify({ session_id: sessionId, question_index: questionIdx, user_answer: userAnswer }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.message)
-      setGrade(json.data.graded)
-      setIsLast(json.data.is_last)
+    setTimeout(() => {
+      const graded = gradeAnswer(currentQ, userAnswer, roundType.id)
+      const newGradedAll = [...gradedAll, { question: currentQ, ai_score: graded.score, ai_feedback: graded.feedback, model_answer: graded.model_answer }]
+      setGradedAll(newGradedAll)
+      setGrade(graded)
+      const last = questionIdx >= questions.length - 1
+      setIsLast(last)
       setShowDrawer(true)
-      if (json.data.session_complete) {
-        setResult(json.data)
+      if (last) {
+        const avgScore  = Math.round(newGradedAll.reduce((s, a) => s + a.ai_score, 0) / newGradedAll.length)
+        const readiness = Math.round(avgScore * 10)
+        setResult({ readiness_score: readiness, xp_gained: readiness, answers: newGradedAll })
       }
-    } catch (err) {
-      toast.error(err.message)
-    } finally {
       setSubmitting(false)
-    }
+    }, 900)
   }
 
-  // ── Next question ──────────────────────────────────────────────────────────
-  const handleNext = () => {
-    if (isLast && result) {
-      setView('results')
-      return
-    }
-    // Move to next question from cached result
-    authFetch('/api/v1/interview/answer', {
-      method: 'POST',
-      body: JSON.stringify({ session_id: sessionId, question_index: questionIdx + 1, user_answer: '' }),
-    }).then(r => r.json()).then(json => {
-      if (json.data?.next_question) {
-        setCurrentQ(json.data.next_question)
-        setQIdx(questionIdx + 1)
-        setUserAnswer('')
-        setGrade(null)
-        setShowDrawer(false)
-      }
-    }).catch(() => {})
-  }
-
-  // After drawer, load next question from the session data stored in result
-  const handleNextFromDrawer = () => {
-    if (isLast) {
-      setView('results')
-      return
-    }
-    // grade was returned with next_question by the API
-    if (grade) {
-      // The /answer endpoint returns next_question in its response
-      // We need to re-call answer but we already have the next_question from submitting
-      // Since we stored the full json in grade, let's store next question in state
-      setCurrentQ(grade._next_question || currentQ)
-      setQIdx(questionIdx + 1)
-      setUserAnswer('')
-      setGrade(null)
-      setShowDrawer(false)
-    }
-  }
-
-  // Better: keep the full API response
-  const [lastResponse, setLastResponse] = useState(null)
-
-  const handleSubmitFull = async () => {
-    if (!userAnswer.trim()) { toast.error('Please type an answer.'); return }
-    setSubmitting(true)
-    try {
-      const res  = await authFetch('/api/v1/interview/answer', {
-        method: 'POST',
-        body: JSON.stringify({ session_id: sessionId, question_index: questionIdx, user_answer: userAnswer }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.message)
-      setLastResponse(json.data)
-      setGrade(json.data.graded)
-      setIsLast(json.data.is_last)
-      setShowDrawer(true)
-      if (json.data.session_complete) setResult(json.data)
-    } catch (err) {
-      toast.error(err.message)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
+  // ── Next question ─────────────────────────────────────────────────────────
   const handleNextQuestion = () => {
-    if (isLast) {
-      setView('results')
-      return
-    }
-    if (lastResponse?.next_question) {
-      setCurrentQ(lastResponse.next_question)
-      setQIdx(lastResponse.next_question_index)
-      setUserAnswer('')
-      setGrade(null)
-      setShowDrawer(false)
-      setLastResponse(null)
-    }
+    if (isLast) { setView('results'); return }
+    const nextIdx = questionIdx + 1
+    setQIdx(nextIdx)
+    setCurrentQ(questions[nextIdx])
+    setUserAnswer('')
+    setGrade(null)
+    setShowDrawer(false)
+    setIsLast(nextIdx >= questions.length - 1)
   }
 
-  // ── Load past sessions ─────────────────────────────────────────────────────
-  const loadSessions = async () => {
-    setLoadSess(true)
-    try {
-      const res  = await authFetch('/api/v1/interview/sessions')
-      const json = await res.json()
-      if (json.success) setSessions(json.data)
-    } catch {}
-    setLoadSess(false)
+  // Sessions from localStorage
+  const loadSessions = () => {
+    try { setSessions(JSON.parse(localStorage.getItem('dp_interview_sessions') || '[]')) } catch {}
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -357,7 +374,7 @@ export default function MockInterviewPage() {
                 {role?.icon} {role?.id} — {roundType?.label}
               </p>
               <h2 style={{ fontSize:18, fontWeight:700, color:'#f1f5f9', margin:'4px 0 0' }}>
-                Question {questionIdx + 1} of {totalQ}
+                Question {questionIdx + 1} of {questions.length}
               </h2>
             </div>
             <button onClick={() => setView('setup')} style={S.backBtn}>✕ End</button>
@@ -367,7 +384,7 @@ export default function MockInterviewPage() {
           <div style={{ height:4, borderRadius:99, background:'rgba(255,255,255,0.07)', marginBottom:24 }}>
             <div style={{
               height:'100%', borderRadius:99, transition:'width 0.4s',
-              width:`${((questionIdx + 1) / totalQ) * 100}%`,
+              width:`${((questionIdx + 1) / questions.length) * 100}%`,
               background:'linear-gradient(90deg,#6366f1,#8b5cf6)',
             }}/>
           </div>
@@ -388,6 +405,11 @@ export default function MockInterviewPage() {
             disabled={showDrawer}
             style={{ ...S.textarea, opacity: showDrawer ? 0.5 : 1 }}
           />
+
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+            <span style={{ fontSize:11, color:'#475569' }}>{userAnswer.trim().split(/\s+/).filter(Boolean).length} words</span>
+            <span style={{ fontSize:11, color:'#475569' }}>Aim for 50+ words for a strong answer</span>
+          </div>
 
           {!showDrawer && (
             <button
